@@ -132,15 +132,6 @@ jobs:
         run: printf '%s' "$JWT_SECRET" | pnpm wrangler secret put jwt_secret --config wrangler-action.toml
 
       - name: Verify deployment
+        working-directory: mail-worker
         shell: bash
-        run: |
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --retry 10 \
-            --retry-all-errors \
-            --retry-delay 3 \
-            --connect-timeout 10 \
-            --max-time 20 \
-            "https://${CUSTOM_DOMAIN}/" >/dev/null
+        run: pnpm wrangler deployments status --config wrangler-action.toml

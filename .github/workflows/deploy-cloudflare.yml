@@ -133,4 +133,14 @@ jobs:
 
       - name: Verify deployment
         shell: bash
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 "https://${CUSTOM_DOMAIN}/" >/dev/null
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-all-errors \
+            --retry-delay 3 \
+            --connect-timeout 10 \
+            --max-time 20 \
+            "https://${CUSTOM_DOMAIN}/" >/dev/null

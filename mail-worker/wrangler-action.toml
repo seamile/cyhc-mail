@@ -19,6 +19,9 @@ database_id = "${D1_DATABASE_ID}"
 binding = "kv"
 id = "${KV_NAMESPACE_ID}"
 
+[[send_email]]
+name = "forward"		# Forward in-app mail to other verified addresses; not limited to one address
+
 [ai]
 binding = "ai"
 
@@ -26,10 +29,19 @@ binding = "ai"
 binding = "assets"
 directory = "./dist"
 not_found_handling = "single-page-application"
-run_worker_first = true
+# Only these paths invoke the Worker; /assets/ and other frontend files are served directly
+run_worker_first = [ "/api/*", "/oss/*", "/static/*", "/attachments/*", "/proxy", "/realtime" ]
 
 [triggers]
 crons = ["0 * * * *"]
+
+[[durable_objects.bindings]]
+name = "ws"
+class_name = "MailHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MailHub"]
 
 [vars]
 domain = "${MAIL_DOMAINS}"

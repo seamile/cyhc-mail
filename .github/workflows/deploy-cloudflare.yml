@@ -131,6 +131,23 @@ jobs:
         shell: bash
         run: printf '%s' "$JWT_SECRET" | pnpm wrangler secret put jwt_secret --config wrangler-action.toml
 
+      - name: Initialize database
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..6}; do
+            response=$(curl -sS -w '\n%{http_code}' "https://${CUSTOM_DOMAIN}/api/init/${JWT_SECRET}" || true)
+            code=${response##*$'\n'}
+            body=${response%$'\n'*}
+            if [[ "$code" == "200" && "$body" == "success" ]]; then
+              echo "Database initialized."
+              exit 0
+            fi
+            echo "Init attempt $attempt failed (HTTP $code): $body"
+            sleep 5
+          done
+          exit 1
+
       - name: Verify deployment
         working-directory: mail-worker
         shell: bash

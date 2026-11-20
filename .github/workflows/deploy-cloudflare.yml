@@ -136,13 +136,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers"
           subdomain=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            "$api/subdomain" \
             | jq -r '.result.subdomain')
           if [[ -z "$subdomain" || "$subdomain" == "null" ]]; then
             echo "workers.dev subdomain is not available." >&2
             exit 1
           fi
+
+          cleanup() {
+            curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H 'Content-Type: application/json' --data '{"enabled":false}' \
+              "$api/scripts/$WORKER_NAME/subdomain" >/dev/null || true
+          }
+          trap cleanup EXIT
+
+          curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' --data '{"enabled":true}' \
+            "$api/scripts/$WORKER_NAME/subdomain" >/dev/null
 
           url="https://${WORKER_NAME}.${subdomain}.workers.dev/api/init/${JWT_SECRET}"
           for attempt in {1..10}; do

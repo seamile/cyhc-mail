@@ -170,6 +170,17 @@ jobs:
           done
           exit 1
 
+      - name: Verify workers.dev disabled
+        working-directory: mail-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" \
+            | jq -r '.result.enabled')
+          echo "workers.dev enabled: $enabled"
+          [[ "$enabled" == "false" ]]
+
       - name: Verify deployment
         working-directory: mail-worker
         shell: bash

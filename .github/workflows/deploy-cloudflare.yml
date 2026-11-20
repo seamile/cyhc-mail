@@ -122,36 +122,6 @@ jobs:
         working-directory: mail-worker
         run: pnpm wrangler deploy --dry-run --config wrangler-action.toml
 
-      - name: Apply D1 schema migrations
-        working-directory: mail-worker
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          d1() {
-            pnpm wrangler d1 execute "$D1_DATABASE_NAME" --remote --yes \
-              --config wrangler-action.toml --json --command "$1"
-          }
-
-          has_column() {
-            local columns
-            columns=$(d1 "PRAGMA table_info($1);")
-            jq -e --arg column "$2" \
-              '.[0].results | map(.name) | index($column) != null' <<<"$columns" >/dev/null
-          }
-
-          # Keep in sync with mail-worker/src/init/init.js when upstream adds migrations.
-          if ! has_column email sender_email; then
-            d1 "ALTER TABLE email ADD COLUMN sender_email TEXT NOT NULL DEFAULT '';"
-          fi
-          d1 "CREATE INDEX IF NOT EXISTS idx_email_user_create_time ON email(user_id, create_time);"
-          if ! has_column setting login_verify; then
-            d1 "ALTER TABLE setting ADD COLUMN login_verify INTEGER NOT NULL DEFAULT 1;"
-          fi
-          if ! has_column setting login_verify_count; then
-            d1 "ALTER TABLE setting ADD COLUMN login_verify_count INTEGER NOT NULL DEFAULT 1;"
-          fi
-
       - name: Deploy Worker
         working-directory: mail-worker
         run: pnpm wrangler deploy --keep-vars --config wrangler-action.toml
@@ -161,14 +131,32 @@ jobs:
         shell: bash
         run: printf '%s' "$JWT_SECRET" | pnpm wrangler secret put jwt_secret --config wrangler-action.toml
 
-      - name: Normalize auto refresh setting
+      - name: Initialize database
         working-directory: mail-worker
         shell: bash
         run: |
           set -euo pipefail
-          pnpm wrangler d1 execute "$D1_DATABASE_NAME" --remote --yes \
-            --config wrangler-action.toml \
-            --command "UPDATE setting SET auto_refresh = CASE WHEN auto_refresh = 0 THEN 1 ELSE 2 END WHERE auto_refresh NOT IN (1, 2);"
+          subdomain=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          if [[ -z "$subdomain" || "$subdomain" == "null" ]]; then
+            echo "workers.dev subdomain is not available." >&2
+            exit 1
+          fi
+
+          url="https://${WORKER_NAME}.${subdomain}.workers.dev/api/init/${JWT_SECRET}"
+          for attempt in {1..10}; do
+            response=$(curl -sS -w '\n%{http_code}' "$url" || true)
+            code=${response##*$'\n'}
+            body=${response%$'\n'*}
+            if [[ "$code" == "200" && "$body" == "success" ]]; then
+              echo "Database initialized."
+              exit 0
+            fi
+            echo "Init attempt $attempt failed (HTTP $code): $body"
+            sleep 5
+          done
+          exit 1
 
       - name: Verify deployment
         working-directory: mail-worker
